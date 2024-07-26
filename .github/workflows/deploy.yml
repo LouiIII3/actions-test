@@ -1,0 +1,56 @@
+name: Deploy # Workflow 이름
+
+# Workflow를 발동시킬 이벤트
+on: # main 브랜치에 push 되었을 때 Workflow가 동작
+  push:
+    branches:
+      - main 
+
+jobs: # Workflow가 수행할 작업 목록
+  build: # Workflow의 첫 번째 Job은 build
+    name: Build # Job 이름
+    runs-on: ubuntu-latest # Runner의 VM OS 종류 및 버전
+
+    steps: # 해당 Job이 수행할 세부 단계(Step), 특정 job(check-bats-version)에서 수행될 step들을 그룹핑하기 위한 선택자
+      - name: Checkout repo # Step의 이름
+        # uses란 특정 액션을 실행시키라는 의미, 여기서는 v4 버전의 checkout 액션을 수행하도록 지정
+        uses: actions/checkout@v4 # Github Action이 해당 저장소를 관리(read/write)할 수 있도록 Checkout
+        # checkout 액션 - 저장소를 runner에 checkout해서 코드에 대해 스크립트나 기타 작업(빌드, 테스팅 등)을 실행할 수 있도록 하는 액션
+        # 워크플로가 repo의 코드를 사용하도록 하기 위해 먼저 지정해야 하는 액션
+
+      - name: Setup Node # VM에 Node.js 설치
+        uses: actions/setup-node@v4
+        with: 
+          node-version: '20' # Node.js의 버전은 20
+
+      - name: Install dependencies # 설치된 Node 버전을 기반으로 npm 의존성 설치
+        uses: bahmutov/npm-install@v1
+
+      - name: Build project # npm run build 명령어를 통해 프로젝트 빌드
+        run: npm run build
+
+      - name: Upload production-ready build files # Github Action에서 빌드된 리소스(html, css, js)를 사용할 수 있도록 워크플로에 사용되는 데이터들을 Artifact에 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-files
+          path: ./dist # 빌드된 리소스가 위치한 폴더 경로(dist/)
+
+  deploy: # Workflow의 두 번째 Job은 deploy
+    name: Deploy
+    needs: build # 현재 job(deploy)에 대한 의존성, build job이 선행되어야 deploy job이 수행될 수 있음
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' # deploy를 수행하기 위해 현재 브랜치가 main인지 확인
+    # github.ref란 Github Actions 내부에서 참조하기 위한 Context 변수
+
+    steps:
+      - name: Download artifact # build job에서 Artifact에 업로드한 리소스(dist/)를 다운받음
+        uses: actions/download-artifact@v4
+        with:
+          name: production-files
+          path: ./dist
+
+      - name: Deploy to GitHub Pages # 빌드된 리소스를 기반으로 Github Pages에 배포
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
